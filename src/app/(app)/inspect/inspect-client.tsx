@@ -129,7 +129,7 @@ export function InspectClient({
               placeholder={PLACEHOLDER}
               disabled={pending}
               spellCheck={false}
-              className="min-h-72 font-mono text-sm"
+              className="h-80 overflow-y-auto field-sizing-fixed resize-y font-mono text-sm"
             />
           </TabsContent>
 
