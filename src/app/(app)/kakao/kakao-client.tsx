@@ -220,7 +220,7 @@ export function KakaoClient({
           <span className="tabular-nums text-slate-500">{total.toLocaleString("ko-KR")}건</span>
           <span className="ml-2 text-xs font-normal text-slate-400">
             {status === "unchecked"
-              ? "번호를 복사해 카카오톡에서 확인 후 가능/불가를 누르세요. 다시 누르면 취소됩니다. 분류한 건은 자정이 지나면 목록에서 빠집니다."
+              ? "번호를 복사해 카카오톡에서 확인 후 가능/불가를 누르세요. 누를 때마다 바로 바뀝니다. 분류한 건은 자정이 지나면 목록에서 빠집니다."
               : "지금까지 분류한 전체 이력입니다."}
           </span>
         </p>
@@ -287,7 +287,7 @@ export function KakaoClient({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setStatus(r, cur === "possible" ? "unchecked" : "possible")}
+                                onClick={() => setStatus(r, "possible")}
                                 disabled={locked}
                                 aria-pressed={cur === "possible"}
                                 className={
@@ -302,7 +302,7 @@ export function KakaoClient({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setStatus(r, cur === "impossible" ? "unchecked" : "impossible")}
+                                onClick={() => setStatus(r, "impossible")}
                                 disabled={locked}
                                 aria-pressed={cur === "impossible"}
                                 className={
