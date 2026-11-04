@@ -47,17 +47,16 @@ type LoadResult =
 
 const loadUser = cache(async (): Promise<LoadResult> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
 
-  if (!user) return { state: "anonymous" };
+  if (!userId) return { state: "anonymous" };
 
   const admin = createAdminClient();
   const { data } = await admin
     .from("profiles")
     .select("id, email, display_name, role, status, can_view_rrn, can_download_master, can_manage_staff")
-    .eq("id", user.id)
+    .eq("id", userId)
     .single<ProfileRow>();
 
   if (!data || data.status !== "active") return { state: "disabled" };

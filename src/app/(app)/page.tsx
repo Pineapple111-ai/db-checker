@@ -1,22 +1,23 @@
 import Link from "next/link";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Copy,
-  Database,
-  ScanSearch,
-} from "lucide-react";
+import { ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StatCard } from "@/components/stat-card";
 import { requireUser, isAdminRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { startOfTodayKstIso } from "@/lib/date";
+import { formatKst, startOfTodayKstIso } from "@/lib/date";
+import { DashboardClient, type TodayBatch } from "./dashboard-client";
 
-type BatchStat = {
+type BatchRecord = {
+  id: string;
+  user_id: string;
+  input_type: "text" | "file";
+  source_filename: string | null;
   total_count: number;
   normal_count: number;
   duplicate_count: number;
   error_count: number;
+  registered_count: number;
+  rows_purged: boolean;
+  created_at: string;
 };
 
 export default async function DashboardPage({
@@ -27,24 +28,59 @@ export default async function DashboardPage({
   const user = await requireUser();
   const { denied } = await searchParams;
   const admin = createAdminClient();
+  const isAdmin = isAdminRole(user.role);
 
-  const { count: masterCount } = await admin
-    .from("master_db")
-    .select("id", { count: "exact", head: true });
+  const todayIso = startOfTodayKstIso();
+
+  const kakaoCount = (s: "unchecked" | "possible" | "impossible", todayOnly: boolean) => {
+    let q = admin
+      .from("master_db")
+      .select("id", { count: "exact", head: true })
+      .eq("kakao_target", true)
+      .eq("kakao_status", s);
+    if (todayOnly) q = q.gte("kakao_checked_at", todayIso);
+    if (s !== "unchecked" && !isAdmin) q = q.eq("kakao_checked_by", user.id);
+    return q;
+  };
+
+  const [{ count: masterCount }, k1, k2, k3] = await Promise.all([
+    admin.from("master_db").select("id", { count: "exact", head: true }),
+    kakaoCount("unchecked", false),
+    kakaoCount("possible", true),
+    kakaoCount("impossible", true),
+  ]);
+
+  const kakao = {
+    unchecked: k1.count ?? 0,
+    possibleToday: k2.count ?? 0,
+    impossibleToday: k3.count ?? 0,
+  };
 
   let query = admin
     .from("inspection_batches")
-    .select("total_count, normal_count, duplicate_count, error_count")
+    .select(
+      "id, user_id, input_type, source_filename, total_count, normal_count, duplicate_count, error_count, registered_count, rows_purged, created_at"
+    )
     .eq("purpose", "inspect")
-    .gte("created_at", startOfTodayKstIso());
+    .gte("created_at", startOfTodayKstIso())
+    .order("created_at", { ascending: false });
 
-  if (!isAdminRole(user.role)) {
-    query = query.eq("user_id", user.id);
-  }
+  if (!isAdmin) query = query.eq("user_id", user.id);
 
-  const { data: batches } = await query.returns<BatchStat[]>();
+  const { data } = await query.returns<BatchRecord[]>();
+  const records = data ?? [];
 
-  const today = (batches ?? []).reduce(
+  const userIds = [...new Set(records.map((b) => b.user_id))];
+  const { data: profiles } = userIds.length
+    ? await admin
+        .from("profiles")
+        .select("id, email, display_name")
+        .in("id", userIds)
+        .returns<{ id: string; email: string; display_name: string | null }[]>()
+    : { data: [] };
+  const userLabel = new Map((profiles ?? []).map((p) => [p.id, p.display_name ?? p.email]));
+
+  const today = records.reduce(
     (acc, b) => ({
       total: acc.total + b.total_count,
       normal: acc.normal + b.normal_count,
@@ -53,6 +89,19 @@ export default async function DashboardPage({
     }),
     { total: 0, normal: 0, duplicate: 0, error: 0 }
   );
+
+  const batches: TodayBatch[] = records.map((b) => ({
+    id: b.id,
+    createdAt: formatKst(b.created_at),
+    userLabel: userLabel.get(b.user_id) ?? "-",
+    inputLabel: b.input_type === "file" ? `파일 · ${b.source_filename ?? "-"}` : "텍스트",
+    total: b.total_count,
+    normal: b.normal_count,
+    duplicate: b.duplicate_count,
+    error: b.error_count,
+    registered: b.registered_count,
+    purged: b.rows_purged,
+  }));
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -66,26 +115,22 @@ export default async function DashboardPage({
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">대시보드</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {isAdminRole(user.role) ? "전체 사용자 기준 오늘 현황입니다." : "내 검수 기준 오늘 현황입니다."}
+            {isAdmin ? "전체 사용자 기준 오늘 현황입니다." : "내 검수 기준 오늘 현황입니다."} 카드를 누르면 아래에 목록이 표시됩니다.
           </p>
         </div>
-        <Button
-          nativeButton={false}
-          render={<Link href="/inspect" />}
-          className="bg-[#1e3a5f] hover:bg-[#162d4a]"
-        >
+        <Button nativeButton={false} render={<Link href="/inspect" />} className="bg-[#1e3a5f] hover:bg-[#162d4a]">
           <ScanSearch className="h-4 w-4" />
           DB 검수 시작
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard label="기존 저장 DB" value={masterCount ?? 0} icon={Database} />
-        <StatCard label="오늘 검수" value={today.total} icon={ScanSearch} />
-        <StatCard label="오늘 정상" value={today.normal} icon={CheckCircle2} tone="green" />
-        <StatCard label="오늘 중복" value={today.duplicate} icon={Copy} tone="amber" />
-        <StatCard label="오늘 오류" value={today.error} icon={AlertTriangle} tone="red" />
-      </div>
+      <DashboardClient
+        masterCount={masterCount ?? 0}
+        today={today}
+        batches={batches}
+        canSeeMaster={isAdmin}
+        kakao={kakao}
+      />
     </div>
   );
 }

@@ -30,9 +30,8 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims ?? null;
 
   const { pathname } = request.nextUrl;
 

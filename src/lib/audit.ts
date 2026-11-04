@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -21,25 +22,34 @@ export async function writeAudit(params: {
   targetId?: string;
   metadata?: Record<string, unknown>;
 }) {
+  let ip: string | null = null;
   try {
     const h = await headers();
-    const ip =
+    ip =
       h.get("x-nf-client-connection-ip") ??
       h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
       null;
-
-    const admin = createAdminClient();
-    const { error } = await admin.from("audit_logs").insert({
-      user_id: params.userId,
-      action: params.action,
-      target_type: params.targetType ?? null,
-      target_id: params.targetId ?? null,
-      metadata: scrub(params.metadata ?? {}),
-      ip,
-    });
-
-    if (error) console.error("[audit] 기록 실패:", error.code);
   } catch {
-    console.error("[audit] 기록 실패");
+    ip = null;
   }
+
+  const record = {
+    user_id: params.userId,
+    action: params.action,
+    target_type: params.targetType ?? null,
+    target_id: params.targetId ?? null,
+    metadata: scrub(params.metadata ?? {}),
+    ip,
+  };
+
+  // 응답을 먼저 보내고 기록
+  after(async () => {
+    try {
+      const admin = createAdminClient();
+      const { error } = await admin.from("audit_logs").insert(record);
+      if (error) console.error("[audit] 기록 실패:", error.code);
+    } catch {
+      console.error("[audit] 기록 실패");
+    }
+  });
 }
