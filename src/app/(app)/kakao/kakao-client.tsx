@@ -23,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatCard } from "@/components/stat-card";
-import { setKakaoMemoAction, setKakaoStatusAction, type KakaoStatus } from "./actions";
+import { getKakaoSnapshotAction, setKakaoStatusAction, type KakaoStatus } from "./actions";
 
 export type KakaoRow = {
   id: string;
@@ -35,7 +35,7 @@ export type KakaoRow = {
   checkedAt: string | null;
   checkedBy: string | null;
   canChange: boolean;
-  memo: string;
+  memo?: string;
 };
 
 type Props = {
@@ -63,49 +63,6 @@ function initState(rows: KakaoRow[]): Record<string, RowState> {
   );
 }
 
-function MemoInput({ row, disabled }: { row: KakaoRow; disabled: boolean }) {
-  const [value, setValue] = useState(row.memo);
-  const saved = useRef(row.memo);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    const next = value.trim();
-    if (next === saved.current) return;
-    setSaving(true);
-    const res = await setKakaoMemoAction({ id: row.id, memo: next });
-    setSaving(false);
-    if (!res.ok) {
-      toast.error(res.error);
-      setValue(saved.current);
-      return;
-    }
-    saved.current = next;
-    toast.success("비고 저장");
-  };
-
-  return (
-    <input
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") {
-          setValue(saved.current);
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      disabled={disabled}
-      maxLength={200}
-      placeholder={disabled ? "" : "메모"}
-      className={`h-8 w-full min-w-40 rounded-md border bg-white/80 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 disabled:bg-transparent disabled:text-slate-500 ${
-        saving ? "border-amber-300" : "border-slate-200"
-      }`}
-      title={value}
-    />
-  );
-}
-
 export function KakaoClient({
   rows: initialRows,
   status,
@@ -121,12 +78,61 @@ export function KakaoClient({
   const [counts, setCounts] = useState(initialCounts);
   const [state, setState] = useState<Record<string, RowState>>(() => initState(initialRows));
   const pending = useRef<Set<string>>(new Set());
+  const totalRef = useRef(total);
 
+  // 서버에서 새 목록을 받으면 화면 상태 초기화
   useEffect(() => {
     setRows(initialRows);
     setCounts(initialCounts);
     setState(initState(initialRows));
   }, [initialRows, initialCounts]);
+
+  useEffect(() => {
+    totalRef.current = total;
+  }, [total]);
+
+  // 작업 목록: 5초마다 다른 직원 분류 상태 반영
+  useEffect(() => {
+    if (status !== "unchecked") return;
+    let stopped = false;
+    let running = false;
+
+    const tick = async () => {
+      if (stopped || running || document.hidden || pending.current.size > 0) return;
+      running = true;
+      const res = await getKakaoSnapshotAction(rows.map((r) => r.id));
+      running = false;
+      if (stopped || !res.ok || pending.current.size > 0) return;
+
+      // 새 번호 추가·자정 경과 등 목록 자체가 바뀌면 새로고침
+      if (res.data.workTotal !== totalRef.current) {
+        router.refresh();
+        return;
+      }
+
+      setState((prev) => {
+        const next = { ...prev };
+        for (const s of res.data.rows) {
+          if (pending.current.has(s.id)) continue;
+          next[s.id] = { status: s.status, canChange: s.canChange, checkedBy: s.checkedBy };
+        }
+        return next;
+      });
+      setCounts(res.data.counts);
+    };
+
+    const timer = setInterval(tick, 5000);
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [status, rows, router]);
 
   const copy = async (text: string, label: string) => {
     try {
@@ -163,7 +169,7 @@ export function KakaoClient({
 
     if (!res.ok) {
       toast.error(res.error);
-      moveCount(to, from); // 숫자 되돌리기
+      moveCount(to, from);
 
       if (res.error.includes("다른 직원")) {
         setState((s) => ({ ...s, [row.id]: { status: "taken", canChange: false, checkedBy: null } }));
@@ -220,7 +226,7 @@ export function KakaoClient({
           <span className="tabular-nums text-slate-500">{total.toLocaleString("ko-KR")}건</span>
           <span className="ml-2 text-xs font-normal text-slate-400">
             {status === "unchecked"
-              ? "번호를 복사해 카카오톡에서 확인 후 가능/불가를 누르세요. 누를 때마다 바로 바뀝니다. 분류한 건은 자정이 지나면 목록에서 빠집니다."
+              ? "번호를 복사해 카카오톡에서 확인 후 가능/불가를 누르세요. 다시 누르면 취소됩니다. 분류한 건은 자정이 지나면 목록에서 빠집니다."
               : "지금까지 분류한 전체 이력입니다."}
           </span>
         </p>
@@ -240,7 +246,6 @@ export function KakaoClient({
                   {status !== "unchecked" && <TableHead>분류일</TableHead>}
                   {isAdmin && <TableHead>분류자</TableHead>}
                   <TableHead className="text-center">분류</TableHead>
-                  <TableHead className="min-w-48">비고</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -287,7 +292,7 @@ export function KakaoClient({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setStatus(r, "possible")}
+                                onClick={() => setStatus(r, cur === "possible" ? "unchecked" : "possible")}
                                 disabled={locked}
                                 aria-pressed={cur === "possible"}
                                 className={
@@ -302,7 +307,7 @@ export function KakaoClient({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setStatus(r, "impossible")}
+                                onClick={() => setStatus(r, cur === "impossible" ? "unchecked" : "impossible")}
                                 disabled={locked}
                                 aria-pressed={cur === "impossible"}
                                 className={
@@ -335,10 +340,6 @@ export function KakaoClient({
                           ) : (
                             <span className="text-xs text-slate-400">변경 권한 없음</span>
                           ))}
-                      </TableCell>
-
-                      <TableCell>
-                        <MemoInput row={r} disabled={locked} />
                       </TableCell>
                     </TableRow>
                   );
