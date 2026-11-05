@@ -131,7 +131,7 @@ export default async function DashboardPage({
 
       <DashboardClient
         masterCount={masterCount ?? 0}
-        today={{ ...today, total: reg.count ?? 0 }}
+        today={today}
         batches={batches}
         canSeeMaster={isAdmin}
         kakao={kakao}
