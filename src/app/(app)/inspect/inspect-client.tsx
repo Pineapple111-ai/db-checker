@@ -151,7 +151,12 @@ export function InspectClient({
           key={result.batchId}
           initial={result}
           canRegister={canRegister}
-          onRegistered={(n) => setMasterCount((c) => c + n)}
+          onRegistered={(n) => {
+            setMasterCount((c) => c + n);
+            setText("");
+            setFiles([]);
+            toast.info("등록 완료: 입력칸을 비웠습니다.");
+          }}
         />
       )}
     </div>
