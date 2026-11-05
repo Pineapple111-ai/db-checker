@@ -100,8 +100,19 @@ export function KakaoClient({
     const tick = async () => {
       if (stopped || running || document.hidden || pending.current.size > 0) return;
       running = true;
-      const res = await getKakaoSnapshotAction(rows.map((r) => r.id));
+      let res: Awaited<ReturnType<typeof getKakaoSnapshotAction>>;
+      try {
+        res = await getKakaoSnapshotAction(rows.map((r) => r.id));
+      } catch {
+        running = false;
+        router.refresh(); // 로그인 만료면 로그인 화면으로
+        return;
+      }
       running = false;
+      if (!res.ok && res.error.includes("로그인")) {
+        router.refresh();
+        return;
+      }
       if (stopped || !res.ok || pending.current.size > 0) return;
 
       // 새 번호 추가·자정 경과 등 목록 자체가 바뀌면 새로고침
@@ -164,11 +175,22 @@ export function KakaoClient({
     moveCount(from, to);
 
     // 2) 서버 저장
-    const res = await setKakaoStatusAction({ id: row.id, status: to });
+    let res: Awaited<ReturnType<typeof setKakaoStatusAction>>;
+    try {
+      res = await setKakaoStatusAction({ id: row.id, status: to });
+    } catch {
+      res = { ok: false, error: "로그인이 만료되었거나 연결이 끊겼습니다. 저장되지 않았습니다." };
+    }
     pending.current.delete(row.id);
 
     if (!res.ok) {
       toast.error(res.error);
+      if (res.error.includes("로그인") || res.error.includes("연결")) {
+        if (status === "unchecked") setState((s) => ({ ...s, [row.id]: prev }));
+        moveCount(to, from);
+        router.refresh(); // 로그인 만료면 자동으로 로그인 화면으로 이동
+        return;
+      }
       moveCount(to, from);
 
       if (res.error.includes("다른 직원")) {

@@ -55,7 +55,7 @@ export async function proxy(request: NextRequest) {
   const last = Number(request.cookies.get(ACTIVITY_COOKIE)?.value ?? "0");
   const now = Date.now();
 
-  if (last > 0 && now - last > timeoutMin * 60_000) {
+  if (timeoutMin > 0 && last > 0 && now - last > timeoutMin * 60_000) {
     await supabase.auth.signOut();
     const res = redirectTo("/login", "idle");
     res.cookies.delete(ACTIVITY_COOKIE);
