@@ -43,11 +43,16 @@ export default async function DashboardPage({
     return q;
   };
 
-  const [{ count: masterCount }, k1, k2, k3] = await Promise.all([
+  const [{ count: masterCount }, k1, k2, k3, reg] = await Promise.all([
     admin.from("master_db").select("id", { count: "exact", head: true }),
     kakaoCount("unchecked", false),
     kakaoCount("possible", true),
     kakaoCount("impossible", true),
+        admin
+      .from("master_db")
+      .select("id", { count: "exact", head: true })
+      .eq("kakao_target", true)
+      .gte("created_at", todayIso),
   ]);
 
   const kakao = {
@@ -126,7 +131,7 @@ export default async function DashboardPage({
 
       <DashboardClient
         masterCount={masterCount ?? 0}
-        today={today}
+        today={{ ...today, total: reg.count ?? 0 }}
         batches={batches}
         canSeeMaster={isAdmin}
         kakao={kakao}

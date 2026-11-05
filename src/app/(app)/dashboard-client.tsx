@@ -140,7 +140,7 @@ export function DashboardClient({
           icon={Database}
           onClick={canSeeMaster ? () => router.push("/master") : undefined}
         />
-        <StatCard label="오늘 검수" value={today.total} icon={ScanSearch} active={active === "total"} onClick={() => open("total")} />
+        <StatCard label="오늘 등록" value={today.total} icon={ScanSearch} active={active === "total"} onClick={() => open("total")} />
         <StatCard label="오늘 정상" value={today.normal} icon={CheckCircle2} tone="green" active={active === "normal"} onClick={() => open("normal")} />
         <StatCard label="오늘 중복" value={today.duplicate} icon={Copy} tone="amber" active={active === "duplicate"} onClick={() => open("duplicate")} />
         <StatCard label="오늘 오류" value={today.error} icon={AlertTriangle} tone="red" active={active === "error"} onClick={() => open("error")} />
