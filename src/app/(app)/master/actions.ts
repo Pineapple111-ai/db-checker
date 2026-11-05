@@ -122,6 +122,7 @@ export async function exportMasterAction(
         f
       )
         .order("created_at", { ascending: false })
+        .order("source_seq", { ascending: true, nullsFirst: false })
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1)
         .returns<ExportRecord[]>();

@@ -59,6 +59,7 @@ export default async function MasterPage({
       "exact"
     )
       .order("created_at", { ascending: false })
+      .order("source_seq", { ascending: true, nullsFirst: false })
       .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
       .returns<Record[]>();
